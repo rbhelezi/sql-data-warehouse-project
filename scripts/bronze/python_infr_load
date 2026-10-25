@@ -1,0 +1,88 @@
+# 1. Read the Excel file
+# Adding 'r' before the string tells Python to treat backslashes as literal text
+df = pd.read_excel(r'C:\python_learning\MySql\src\2026-27 IRM Custom Export (004).xlsx')
+# 2. Convert and save to a CSV file
+df.to_csv(r'C:\python_learning\MySql\src\output_file.csv', index=False)
+print("Conversion complete!")
+#import libraries
+import pandas as pd
+from datetime import datetime
+import numpy as np
+from sqlalchemy import create_engine
+# Getting the csv file
+CSV_FILE = "../data/output_file_25_26.csv"
+#Configuration
+MYSQL_USER = "root"
+MYSQL_PASSWORD = "ECSECC_root_pwd_26!"
+MYSQL_HOST = "154.114.73.209"
+MYSQL_PORT = "3306"
+MYSQL_DATABASE = "db_stg_data"
+TARGET_TABLE = "etl_transformed_irm_25_26"
+#Setup Database connection
+#SQlAchemy connection string
+conn_str = (
+    f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}"
+)
+#Create SQLAlchemy engine
+engine = create_engine(conn_str)
+#READ CSV FILE (Extract)
+try:
+    df = pd.read_csv(CSV_FILE)
+    print("fData extracted from {CSV_FILE}, shape = {df.shape}")
+    display(df.head())
+except Exception as e:
+    print(f"error reading CSV: {e}")
+    raise
+  #TRANSFORMATIONS (TRANSFORM)_Amended
+# Clean columns names
+df.columns = (
+    df.columns
+     .str.replace(' ', '_')
+     .str.replace(r'([A-Z])', r'_\1', regex=True)
+     .str.lower()
+     .str.replace(r'_{2,}', '_', regex=True)  # <-- Collapses '__', '___', etc. into '_'
+     .str.strip('_')
+)
+date_cols = [
+    "date_created",  # Kept your original spelling just in case
+    "date_last_updated",
+    "project_start_date",
+    "project_end_date",
+    "actual_construction_start_date",
+    "construction_end_date",
+    "estimated_construction_start_date",
+    "estimated_project_end_date",
+    "revised_construction_end_date",
+]
+
+# Only select columns that actually exist in the DataFrame
+existing_date_cols = [col for col in date_cols if col in df.columns]
+
+# Convert only the existing columns
+df[existing_date_cols] = df[existing_date_cols].apply(pd.to_datetime)
+with pd.option_context('display.max_rows', None):
+    display(df.dtypes.to_frame(name='Data Type'))
+  # Adding file name column
+# This extracts 'output_file_25_26.csv' from your path variable and populates the column
+# Adding file name column
+import os  # <-- Add this line here to explicitly define 'os'
+#df["file_name"] = os.path.basename(EXCEL_FILE)
+
+df["file_name"] = os.path.basename(CSV_FILE)
+
+#Adding timestamp
+df["load_timestamp"] = pd.to_datetime(datetime.utcnow())
+print("transformation complete.")
+display(df.head())
+#Load into mysql
+try:
+    df.to_sql(
+        name=TARGET_TABLE,
+        con=engine,
+        if_exists="append",
+        index=False,
+        chunksize=1000
+    )
+
+except Exception as e:
+    print("Error loading to MySQL: (e)")
